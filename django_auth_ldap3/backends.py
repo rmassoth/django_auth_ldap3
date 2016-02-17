@@ -104,7 +104,7 @@ class LDAPBackend(object):
             django_user.first_name = ldap_user.givenName
             django_user.last_name = ldap_user.sn
             django_user.email = ldap_user.mail
-            django_user.is_staff = admin
+            # django_user.is_staff = admin
             django_user.save()
 
         self.update_group_membership(ldap_user, django_user)

@@ -1,10 +1,13 @@
 from django_auth_ldap3.conf import settings
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group
+from django.contrib.auth import get_user_model
 from ldap3.core.exceptions import LDAPSocketOpenError
 import hashlib
 import ldap3
 import logging
+
+User = get_user_model()
 
 logger = logging.getLogger('django_auth_ldap3')
 
@@ -30,6 +33,10 @@ class LDAPUser(object):
                 setattr(self, k, None)
 
     def __str__(self):
+        return self.username
+
+    @property
+    def username(self):
         return getattr(self, settings.UID_ATTRIB)
 
 class LDAPBackend(object):
@@ -77,25 +84,32 @@ class LDAPBackend(object):
         # Get or create the User object in Django's auth, populating it with
         # fields from the LDAPUser. Note we set the password to a random hash
         # as authentication should never occur directly off this user.
-        user, created = User.objects.get_or_create(username=username, defaults={
-                'password': hashlib.sha1().hexdigest(),
-                'first_name': ldap_user.givenName,
-                'last_name': ldap_user.sn,
-                'email': ldap_user.mail,
-                'is_superuser': False,
-                'is_staff': admin,
-                'is_active': True
-        })
+        django_user = User.objects.filter(username__iexact=username)
+        if not django_user:
+            # Create new user. We use `ldap_user.username` here as it is the
+            # case-sensitive version
+            django_user = User(username=ldap_user.username,
+                    password=hashlib.sha1().hexdigest(),
+                    first_name=ldap_user.givenName,
+                    last_name=ldap_user.sn,
+                    email=ldap_user.mail,
+                    is_superuser=False,
+                    is_staff=admin,
+                    is_active=True
+            )
+            django_user.save()
+        else:
+            # If the user wasn't created, update its fields from the directory.
+            django_user = django_user[0]
+            django_user.first_name = ldap_user.givenName
+            django_user.last_name = ldap_user.sn
+            django_user.email = ldap_user.mail
+            django_user.is_staff = admin
+            django_user.save()
 
-        # If the user wasn't created, update its fields from the directory.
-        if not created:
-            user.first_name = ldap_user.givenName
-            user.last_name = ldap_user.sn
-            user.email = ldap_user.mail
-            user.is_staff = admin
-            user.save()
+        self.update_group_membership(ldap_user, django_user)
 
-        return user
+        return django_user
 
     def get_user(self, user_id):
         """
@@ -109,7 +123,7 @@ class LDAPBackend(object):
     def check_group_membership(self, ldap_user, group_dn):
         """
         Check the LDAP user to see if it is a member of the given group.
-        
+
         This is straightforward with OpenLDAP but tricky with AD as due to
         the weird way AD handles "primary" group membership, we must test for
         a separate attribute as well as the usual 'memberof' as the primary
@@ -138,7 +152,7 @@ class LDAPBackend(object):
                 settings.UID_ATTRIB, str(ldap_user), group_dn)
         if pgt:
             search_filter = '(|{}(&(cn={})(primaryGroupID={})))'.format(search_filter, ldap_user.cn, pgt)
-        
+
         # Return True if user is a member of group
         r = self.search_ldap(ldap_user.connection, search_filter)
         return r is not None
@@ -224,3 +238,33 @@ class LDAPBackend(object):
 
         # Construct an LDAPUser instance for this user
         return LDAPUser(c, attributes)
+
+    def update_group_membership(self, ldap_user, django_user):
+        """Update the user's group memberships
+
+        Checks settings.GROUP_MAP to determine group memberships
+        that should be added.
+        """
+
+        if not settings.GROUP_MAP:
+            return None
+
+        groups = {'add': [], 'remove': []}
+        for ldap_group, django_groups in settings.GROUP_MAP.items():
+            if self.check_group_membership(ldap_user, ldap_group):
+                groups['add'] += [group for group in django_groups if group not in groups['add']]
+            else:
+                groups['remove'] += [group for group in django_groups if group not in groups['remove']]
+
+        for operation in ('remove', 'add'):
+            grouplist = groups[operation]
+            for group in grouplist:
+                try:
+                    g = Group.objects.get(name=group)
+                except Group.DoesNotExist:
+                    logger.error('Django group does not exist: {}'.format(group))
+                    continue
+                else:
+                    getattr(django_user.groups, operation)(g)
+
+        django_user.save()

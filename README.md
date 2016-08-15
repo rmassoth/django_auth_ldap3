@@ -12,8 +12,8 @@ It is licensed under the [BSD license](https://github.com/sjkingo/django_auth_ld
 
 It is known to work with:
 
-* Python 2.7+, 3.3+, 3.4+
-* Django 1.6.10, 1.7+, 1.8+
+* Python 2.7, 3.3-3.5
+* Django 1.6.10, 1.7-1.9
 
 Note at some point in the future, support for Python 2.7/3.3 and Django 1.6/1.7 will be dropped (see [issue #15](https://github.com/sjkingo/django_auth_ldap3/issues/15)).
 
@@ -59,7 +59,9 @@ A full configuration reference of all settings [is available](https://github.com
    * Any valid [LDAP
    URI](https://www.centos.org/docs/5/html/CDS/ag/8.0/LDAP_URLs-Examples_of_LDAP_URLs.html)
    is allowed for the `AUTH_LDAP_URI` setting (the port is optional and will
-   default to 389 if not specified). TLS is not yet supported (see [issue #3](https://github.com/sjkingo/django_auth_ldap3/issues/3)).
+   default to 389 if not specified).
+
+   * TLS has been supported since [v0.9.5](https://github.com/sjkingo/django_auth_ldap3/releases/tag/v0.9.5) with `AUTH_LDAP_TLS`.
 
    * `AUTH_LDAP_BASE_DN` must be set to the base container to perform any subtree
    searches from.
@@ -195,7 +197,7 @@ Default: `'ldap://localhost'`
 
 **Required.** A valid LDAP URI that specifies a connection to a directory server.
 
-TLS is not yet supported (see [issue #3](https://github.com/sjkingo/django_auth_ldap3/issues/3)).
+TLS has been supported since [v0.9.5](https://github.com/sjkingo/django_auth_ldap3/releases/tag/v0.9.5) with `AUTH_LDAP_TLS`.
 
 #### `AUTH_LDAP_ADMIN_GROUP`
 
@@ -242,3 +244,36 @@ Default: `None`
 *Optional.* String to suffix the username before binding. This is used for `user@domain` principals.
 
 You must set `AUTH_LDAP_BIND_TEMPLATE` to `None` when using this option.
+
+*Added in version 0.9.5*
+
+#### `AUTH_LDAP_TLS`
+
+*Optional.* Flag to enable LDAP over TLS. Further options can be configured through `AUTH_LDAP_TLS_CA_CERTS`,
+`AUTH_LDAP_TLS_VALIDATE`, `AUTH_LDAP_TLS_PRIVATE_KEY`, and `AUTH_LDAP_TLS_LOCAL_CERT`.
+
+Default: `False`
+
+#### `AUTH_LDAP_TLS_CA_CERTS`
+*Optional.* String to the location of the file containing the certificates of the certification authorities.
+
+It's checked only if `AUTH_LDAP_TLS_VALIDATE` is set to `True`.
+
+Default: It will use the system wide certificate store.
+
+#### `AUTH_LDAP_TLS_VALIDATE`
+*Optional.* Specifies if the server certificate must be validated.
+
+Default: `True`
+
+#### `AUTH_LDAP_TLS_PRIVATE_KEY`
+*Optional.* Specifies the location for the file with the private key of the client.
+
+#### `AUTH_LDAP_TLS_LOCAL_CERT`
+*Optional.* Specifies the location for the file with the certificate of the server.
+
+## Caveats
+
+When using this library, it is strongly recommended to not manually
+modify the usernames in the Django user table (either through the admin or modifying a 
+`User.username` field). See issues [#7](https://github.com/sjkingo/django_auth_ldap3/issues/7) and [#9](https://github.com/sjkingo/django_auth_ldap3/issues/9) for more details.
